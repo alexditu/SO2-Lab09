@@ -29,6 +29,7 @@ MODULE_LICENSE("GPL");
 	do {} while (0)
 #endif
 
+
 struct minfs_sb_info {
 	__u8 version;
 	unsigned long imap;
@@ -39,7 +40,6 @@ struct minfs_inode_info {
 	__u16 data_block;
 	struct inode vfs_inode;
 };
-
 /*
  * forward declarations
  */
@@ -111,21 +111,23 @@ static int minfs_readdir(struct file *filp, struct dir_context *ctx)
 	struct buffer_head *bh;
 	struct minfs_dir_entry *de;
 	/* TODO 3: get inode of directory and container inode */
-	/* struct inode *inode = ... */
-	/* struct minfs_inode_info *mii = ... */
-	/* struct super_block *sb = inode->i_sb; */
+	struct inode *inode 			= filp->f_inode;
+	struct minfs_inode_info *mii 	= container_of(inode, struct minfs_inode_info, vfs_inode);
+	struct super_block *sb 			= inode->i_sb;
 	int over;
 	int err = 0;
 
 	/* TODO 3: read data block for directory inode */
 
+	bh = sb_bread(sb, mii->data_block);
 	for (; ctx->pos < MINFS_NUM_ENTRIES; ctx->pos++) {
 		/* TODO 3: data block contains an array of
 		 * "struct minfs_dir_entry". Use `de' for storing.
 		 */
-
+		 de = ((struct minfs_dir_entry *) bh->b_data) + ctx->pos;
 		/* TODO 3: Step over empty entries (de->ino == 0). */
-
+		 if (de->ino == 0)
+		 	continue;
 		/*
 		 * Use `over' to store return value of dir_emit and exit
 		 * if required.
@@ -172,12 +174,21 @@ static struct minfs_dir_entry *minfs_find_entry(struct dentry *dentry,
 
 	/* TODO 4: read parent folder data block (contains dentries),
 	 * complete bhp with return value */
+	bh = sb_bread(sb, mii->data_block);
 
 	for (i = 0; i < MINFS_NUM_ENTRIES; i++) {
 		/* TODO 4: traverse all entries, find entry by name
 		 * Use `de' to traverse. Use `final_de' to store dentry
 		 * found, if existing.
 		 */
+		 de = ((struct minfs_dir_entry *) bh->b_data) + i;
+
+		 if (de->ino == 0)
+		 	continue;
+
+		 if (strcmp(de->name, name) == 0) {
+		 	final_de = de;
+		 }
 	}
 
 	/* bh needs to be released by caller */
@@ -213,7 +224,8 @@ static struct dentry *minfs_lookup(struct inode *dir,
 
 static struct inode_operations minfs_dir_inode_operations = {
 	/* TODO 4: replace with minfs_lookup */
-	.lookup		= simple_lookup,
+	//.lookup		= simple_lookup,
+	.lookup		= minfs_lookup,
 };
 
 /*

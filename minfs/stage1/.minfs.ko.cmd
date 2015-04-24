@@ -1,0 +1,1 @@
+cmd_/home/student/so2/lab09-tasks/minfs/stage1/minfs.ko := ld -r -m elf_i386 -T /home/student/so2/linux-3.13/scripts/module-common.lds --build-id  -o /home/student/so2/lab09-tasks/minfs/stage1/minfs.ko /home/student/so2/lab09-tasks/minfs/stage1/minfs.o /home/student/so2/lab09-tasks/minfs/stage1/minfs.mod.o

@@ -49,10 +49,15 @@ struct inode *myfs_get_inode(struct super_block *sb, const struct inode *dir,
 		 * implementation */
 		/* directory inodes start off with i_nlink == 2 (for "." entry)
 		 * */
+		inode->i_op 	= &myfs_dir_inode_operations;
+		inode->i_fop 	= &simple_dir_operations;
 		inc_nlink(inode);
 	}
 	if (S_ISREG(mode)) {
 		/* TODO 2 */
+		inode->i_op 	= &myfs_dir_inode_operations;
+		inode->i_fop 	= &myfs_file_operations;
+		inode->i_mapping->a_ops = &myfs_aops;
 	}
 
 	return inode;
@@ -61,10 +66,73 @@ struct inode *myfs_get_inode(struct super_block *sb, const struct inode *dir,
 /*
  * TODO 1: myfs_mknod, myfs_create, myfs_mkdir
  */
+static int myfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode, dev_t dev)
+{
+	struct inode *inode = myfs_get_inode(dir->i_sb, dir, mode);
+	int error = -ENOSPC;
+
+	if (inode) {
+		d_instantiate(dentry, inode);
+		dget(dentry);   /* Extra count - pin the dentry in core */
+		error = 0;
+		dir->i_mtime = dir->i_ctime = CURRENT_TIME;
+	}
+	return error;
+}
+
+static int myfs_mkdir(struct inode * dir, struct dentry * dentry, umode_t mode)
+{
+	int retval = myfs_mknod(dir, dentry, mode | S_IFDIR, 0);
+	if (!retval)
+		inc_nlink(dir);
+	return retval;
+}
+
+static int myfs_create(struct inode *dir, struct dentry *dentry, umode_t mode, bool excl)
+{
+        return myfs_mknod(dir, dentry, mode | S_IFREG, 0);
+}
 
 /*
  * TODO 1&2: define structures (see forward declarations above)
  */
+
+/* Complete for Exercise 2 */
+
+static struct inode_operations myfs_dir_inode_operations = {
+	.mkdir 		= myfs_mkdir,
+	.create 	= myfs_create,
+	.mknod      = myfs_mknod,
+
+	.lookup     = simple_lookup,
+	.link       = simple_link,
+	.unlink     = simple_unlink,
+	.rmdir      = simple_rmdir,
+	.rename     = simple_rename
+};
+
+static const struct file_operations myfs_file_operations = {
+	.llseek         = generic_file_llseek,
+	.read           = do_sync_read,
+	.write          = do_sync_write,
+	.mmap           	= generic_file_mmap,
+	.aio_read       = generic_file_aio_read,
+	.aio_write      = generic_file_aio_write,
+	.splice_read    = generic_file_splice_read,
+	.splice_write   = generic_file_splice_write,
+};
+
+static struct inode_operations myfs_file_inode_operations = {
+	.setattr        = simple_setattr,
+	.getattr        = simple_getattr,
+};
+
+static const struct address_space_operations myfs_aops = {
+	.readpage       = simple_readpage,
+	.write_begin    = simple_write_begin,
+	.write_end      = simple_write_end
+};
+
 
 static int myfs_fill_super(struct super_block *sb, void *data, int silent)
 {

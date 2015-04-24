@@ -50,6 +50,87 @@ static struct inode_operations minfs_file_inode_operations;
 static const struct file_operations minfs_dir_operations;
 static struct inode_operations minfs_dir_inode_operations;
 
+static int minfs_readdir(struct file *filp, struct dir_context *ctx)
+{
+	struct buffer_head *bh;
+	struct minfs_dir_entry *de;
+	/* TODO 3: get inode of directory and container inode */
+	struct inode *inode 			= filp->f_inode;
+	struct minfs_inode_info *mii 	= container_of(inode, struct minfs_inode_info, vfs_inode);
+	struct super_block *sb 			= inode->i_sb;
+	int over;
+	int err = 0;
+
+	/* TODO 3: read data block for directory inode */
+
+	bh = sb_bread(sb, mii->data_block);
+	for (; ctx->pos < MINFS_NUM_ENTRIES; ctx->pos++) {
+		/* TODO 3: data block contains an array of
+		 * "struct minfs_dir_entry". Use `de' for storing.
+		 */
+		 de = ((struct minfs_dir_entry *) bh->b_data) + ctx->pos;
+		/* TODO 3: Step over empty entries (de->ino == 0). */
+		 if (de->ino == 0)
+		 	continue;
+		/*
+		 * Use `over' to store return value of dir_emit and exit
+		 * if required.
+		 */
+		over = dir_emit(ctx, de->name, MINFS_NAME_LEN, de->ino,
+				DT_UNKNOWN);
+		if (over) {
+			dprintk("Read %s from folder %s, ctx->pos: %lld\n",
+					de->name,
+					filp->f_path.dentry->d_name.name,
+					ctx->pos);
+			ctx->pos++;
+			goto done;
+		}
+	}
+
+done:
+	brelse(bh);
+out_bad_sb:
+	return err;
+}
+
+static struct minfs_dir_entry *minfs_find_entry(struct dentry *dentry,
+		struct buffer_head **bhp)
+{
+	struct buffer_head *bh;
+	struct inode *dir = dentry->d_parent->d_inode;
+	struct minfs_inode_info *mii = container_of(dir,
+			struct minfs_inode_info, vfs_inode);
+	struct super_block *sb = dir->i_sb;
+	const char *name = dentry->d_name.name;
+	struct minfs_dir_entry *final_de = NULL;
+	struct minfs_dir_entry *de;
+	int i;
+
+	/* TODO 4: read parent folder data block (contains dentries),
+	 * complete bhp with return value */
+	bh = sb_bread(sb, mii->data_block);
+
+	for (i = 0; i < MINFS_NUM_ENTRIES; i++) {
+		/* TODO 4: traverse all entries, find entry by name
+		 * Use `de' to traverse. Use `final_de' to store dentry
+		 * found, if existing.
+		 */
+		 de = ((struct minfs_dir_entry *) bh->b_data) + i;
+
+		 if (de->ino == 0)
+		 	continue;
+
+		 if (strcmp(de->name, name) == 0) {
+		 	final_de = de;
+		 }
+	}
+
+	/* bh needs to be released by caller */
+	return final_de;
+}
+
+
 static struct inode *minfs_iget(struct super_block *s, unsigned long ino)
 {
 	struct minfs_inode *mi;
@@ -136,11 +217,11 @@ static struct inode_operations minfs_file_inode_operations = {
 	.getattr	= simple_getattr,
 };
 
-static int minfs_readdir(struct file *filp, struct dir_context *ctx)
-{
-	/* TODO 5: copy-paste from stage 1 */
-	return 0;
-}
+// static int minfs_readdir(struct file *filp, struct dir_context *ctx)
+// {
+// 	/* TODO 5: copy-paste from stage 1 */
+// 	return 0;
+// }
 
 static const struct file_operations minfs_dir_operations = {
 	.read		= generic_read_dir,
@@ -151,12 +232,12 @@ static const struct file_operations minfs_dir_operations = {
  * find dentry in parent folder; return parent folder's data buffer_head
  */
 
-static struct minfs_dir_entry *minfs_find_entry(struct dentry *dentry,
-		struct buffer_head **bhp)
-{
-	/* TODO 5: copy-paste from stage 1 */
-	return NULL;
-}
+// static struct minfs_dir_entry *minfs_find_entry(struct dentry *dentry,
+// 		struct buffer_head **bhp)
+// {
+// 	/* TODO 5: copy-paste from stage 1 */
+// 	return NULL;
+// }
 
 static struct dentry *minfs_lookup(struct inode *dir,
 		struct dentry *dentry, unsigned int flags)
@@ -198,9 +279,23 @@ static struct inode *minfs_new_inode(struct inode *dir)
 
 	/* TODO 5: find first available inode and mark it as used */
 
+	idx = find_first_zero_bit(&sbi->imap, sizeof(unsigned long));
+	__set_bit(idx, &sbi->imap);
+
 	/* TODO 5: mark superblock buffer head as dirty */
+	mark_buffer_dirty(sbi->sbh);
 
 	/* TODO 5: new_inode, fill inode, insert it into inode hash table */
+	inode = new_inode(sb);
+	if (!inode)
+		return NULL;
+
+	inode->i_ino = get_next_ino();
+	inode_init_owner(inode, dir, 0);
+	inode->i_atime = inode->i_mtime = inode->i_ctime = CURRENT_TIME;
+
+	insert_inode_hash(inode);
+
 
 	return inode;
 }
@@ -212,22 +307,41 @@ static struct inode *minfs_new_inode(struct inode *dir)
 static int minfs_add_link(struct dentry *dentry, struct inode *inode)
 {
 	struct buffer_head *bh;
-	/* TODO 5: directory inode & containing inode */
-	/* struct inode *dir = ... */
-	/* const char *name = ... */
-	/* struct super_block *sb = dir->i_sb; */
-	/* struct minfs_inode_info *mii = ... */
+	/* TODO 5: directory inode  containing inode */
+	struct inode *dir = dentry->d_parent->d_inode;
+	const char *name = dentry->d_name.name;
+	int namelen = dentry->d_name.len;
+	struct super_block *sb = dir->i_sb;
+	struct minfs_inode_info *mii = container_of(dir, struct minfs_inode_info, vfs_inode);
 	struct minfs_dir_entry *de;
 	int i;
 	int err = 0;
+	int index = -1;
 
 	/* TODO 5: uncomment next line */
-	/* bh = sb_bread(sb, mii->data_block) */
+	bh = sb_bread(sb, mii->data_block);
 
 	/* TODO 5: find first free inode (de->ino == 0) */
+	for (i = 0; i < MINFS_NUM_ENTRIES; i++) {
+		 de = ((struct minfs_dir_entry *) bh->b_data) + i;
+
+		 if (de->ino == 0) {
+		 	index = i;
+		 	de->ino = i;
+		 	memcpy(de->name, name, namelen);
+		 	break;
+		 }
+
+	}
+
+	if (index == -1) {
+		err = -1;
+		goto out;
+	}
 
 	/* TODO 5: place new entry in the available slot;
 	 * mark buffer_head as dirty */
+	mark_buffer_dirty(bh);
 
 out:
 	brelse(bh);
